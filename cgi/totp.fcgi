@@ -73,9 +73,16 @@ def webapp(environ, start_response):
     remote_host = environ.get('REMOTE_ADDR')
 
     if mode != 'PAM_SM_AUTH':
-        return bad_request(start_response, "We only support PAM_SM_AUTH")
+        if mode == 'PAM_SM_AUTH_TOKEN_ONLY':
+            # ignore pincode
+            local_require_pincode = False
+        else:
+            local_require_pincode = require_pincode
+            return bad_request(start_response, 'We only support PAM_SM_AUTH')
+    else:
+        local_require_pincode = require_pincode
 
-    ga = totpcgi.GoogleAuthenticator(backends, require_pincode)
+    ga = totpcgi.GoogleAuthenticator(backends, local_require_pincode)
 
     try:
         status = ga.verify_user_token(user, token)
