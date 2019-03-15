@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 ##
 # Copyright (C) 2012 by Konstantin Ryabitsev and contributors
 #
@@ -13,19 +14,25 @@
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
 # 02111-1307, USA.
 #
+from __future__ import (absolute_import,
+                        division,
+                        print_function,
+                        with_statement,
+                        unicode_literals)
+
+__author__ = 'Konstantin Ryabitsev <konstantin@linuxfoundation.org>'
+
 import logging
 import totpcgi
 import syslog
 
-import exceptions
-
 logger = logging.getLogger('totpcgi')
 
 
-class BackendNotSupported(exceptions.Exception):
+class BackendNotSupported(Exception):
     def __init__(self, message):
-        exceptions.Exception.__init__(self, message)
-        logger.debug('!BackendNotSupported: %s' % message)
+        Exception.__init__(self, message)
+        logger.debug('!BackendNotSupported: %s', message)
 
 
 class Backends:
@@ -159,7 +166,7 @@ class GAPincodeBackend:
     def verify_user_pincode(self, user, pincode):
         pass
 
-    def save_user_hashcode(self, user, pincode, makedb=True):
+    def save_user_hashcode(self, user, pincode):
         pass
 
     def delete_user_hashcode(self, user):
@@ -167,7 +174,7 @@ class GAPincodeBackend:
 
     @staticmethod
     def _verify_by_hashcode(pincode, hashcode):
-        logger.debug('Will test against %s' % hashcode)
+        logger.debug('Will test against %s', hashcode)
         from passlib.context import CryptContext
         myctx = CryptContext(schemes=['sha256_crypt', 'sha512_crypt',
                                       'bcrypt', 'md5_crypt'])

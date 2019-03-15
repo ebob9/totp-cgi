@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 ##
 # Copyright (C) 2012 by Konstantin Ryabitsev and contributors
 #
@@ -13,14 +14,20 @@
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
 # 02111-1307, USA.
 #
-from __future__ import absolute_import
+from __future__ import (absolute_import,
+                        division,
+                        print_function,
+                        with_statement,
+                        unicode_literals)
+
+__author__ = 'Konstantin Ryabitsev <konstantin@linuxfoundation.org>'
 
 import logging
 import totpcgi
 import totpcgi.backends
 import totpcgi.utils
 
-import MySQLdb
+import pymysql
 
 logger = logging.getLogger('totpcgi')
 
@@ -33,7 +40,7 @@ def db_connect(connect_host, connect_user, connect_password, connect_db):
     global dbconn
 
     if connect_host not in dbconn or not dbconn[connect_host].open:
-        dbconn[connect_host] = MySQLdb.connect(host=connect_host, user=connect_user,
+        dbconn[connect_host] = pymysql.connect(host=connect_host, user=connect_user,
                                                passwd=connect_password, db=connect_db)
 
     return dbconn[connect_host]
@@ -46,13 +53,13 @@ def get_user_id(conn, user):
         return userids[user]
 
     cur = conn.cursor()
-    logger.debug('Checking users record for %s' % user)
+    logger.debug('Checking users record for %s', user)
 
     cur.execute('SELECT userid FROM users WHERE username = %s', (user,))
     row = cur.fetchone()
 
     if row is None:
-        logger.debug('No existing record for user=%s, creating' % user)
+        logger.debug('No existing record for user=%s, creating', user)
         cur.execute('INSERT INTO users (username) VALUES (%s)', (user,))
         cur.execute('SELECT userid FROM users WHERE username = %s', (user,))
         row = cur.fetchone()
@@ -71,7 +78,8 @@ class GAStateBackend(totpcgi.backends.GAStateBackend):
 
         logger.debug('Checking if we have the counters table')
         cur = self.conn.cursor()
-        cur.execute("SELECT exists(SELECT * FROM information_schema.tables WHERE table_name=%s)", ('counters',))
+        cur.execute("SELECT exists(SELECT * FROM information_schema.tables WHERE table_name=%s)",
+                    ('counters',))
         self.has_counters = cur.fetchone()[0]
 
         if not self.has_counters:
@@ -85,7 +93,7 @@ class GAStateBackend(totpcgi.backends.GAStateBackend):
 
         state = totpcgi.GAUserState()
 
-        logger.debug('Acquiring lock for userid=%s' % userid)
+        logger.debug('Acquiring lock for userid=%s', userid)
 
         cur = self.conn.cursor()
         cur.execute('SELECT GET_LOCK(%s,180)', (userid,))
@@ -107,7 +115,9 @@ class GAStateBackend(totpcgi.backends.GAStateBackend):
               FROM used_scratch_tokens
              WHERE userid = %s''', (userid,))
 
-        for (token,) in cur.fetchall():
+        for (itoken,) in cur.fetchall():
+            token = str(itoken).zfill(8)
+            logger.debug('Found a used scratch token: %s', token)
             state.used_scratch_tokens.append(token)
 
         # Now try to load counter info, if we have that table
@@ -124,7 +134,7 @@ class GAStateBackend(totpcgi.backends.GAStateBackend):
         return state
 
     def update_user_state(self, user, state):
-        logger.debug('Writing new state for user %s' % user)
+        logger.debug('Writing new state for user %s', user)
 
         if user not in self.locks.keys():
             raise totpcgi.UserStateError("%s's MySQL lock has gone away!" % user)
@@ -157,7 +167,7 @@ class GAStateBackend(totpcgi.backends.GAStateBackend):
                 INSERT INTO counters (userid, counter)
                      VALUES (%s, %s)''', (userid, state.counter))
 
-        logger.debug('Releasing lock for userid=%s' % userid)
+        logger.debug('Releasing lock for userid=%s', userid)
         cur.execute('SELECT RELEASE_LOCK(%s)', (userid,))
 
         self.conn.commit()
@@ -166,7 +176,7 @@ class GAStateBackend(totpcgi.backends.GAStateBackend):
 
     def delete_user_state(self, user):
         cur = self.conn.cursor()
-        logger.debug('Deleting state records for user=%s' % user)
+        logger.debug('Deleting state records for user=%s', user)
 
         userid = get_user_id(self.conn, user)
 
@@ -188,7 +198,7 @@ class GAStateBackend(totpcgi.backends.GAStateBackend):
         if not cur.fetchone():
             cur.execute('SELECT True FROM secrets WHERE userid=%s', (userid,))
             if not cur.fetchone():
-                logger.debug('No entries left for user=%s, deleting' % user)
+                logger.debug('No entries left for user=%s, deleting', user)
                 cur.execute('DELETE FROM users WHERE userid=%s', (userid,))
 
         self.conn.commit()
@@ -204,7 +214,8 @@ class GASecretBackend(totpcgi.backends.GASecretBackend):
 
         logger.debug('Checking if we have the counters table')
         cur = self.conn.cursor()
-        cur.execute("SELECT exists(SELECT * FROM information_schema.tables WHERE table_name=%s)", ('counters',))
+        cur.execute("SELECT exists(SELECT * FROM information_schema.tables WHERE table_name=%s)",
+                    ('counters',))
         self.has_counters = cur.fetchone()[0]
 
         if not self.has_counters:
@@ -213,7 +224,7 @@ class GASecretBackend(totpcgi.backends.GASecretBackend):
     def get_user_secret(self, user, pincode=None):
         cur = self.conn.cursor()
 
-        logger.debug('Querying DB for user %s' % user)
+        logger.debug('Querying DB for user %s', user)
 
         cur.execute('''
             SELECT s.secret, 
@@ -242,7 +253,7 @@ class GASecretBackend(totpcgi.backends.GASecretBackend):
         if window_size is not None:
             gaus.window_size = window_size
 
-        logger.debug('Querying DB for counter info for %s' % user)
+        logger.debug('Querying DB for counter info for %s', user)
         # Now try to load counter info, if we have that table
         if self.has_counters:
             cur.execute('''
@@ -259,7 +270,7 @@ class GASecretBackend(totpcgi.backends.GASecretBackend):
         if using_encrypted_secret:
             return gaus
 
-        logger.debug('Querying DB for scratch tokens for %s' % user)
+        logger.debug('Querying DB for scratch tokens for %s', user)
 
         cur.execute('''
             SELECT st.token
@@ -267,7 +278,9 @@ class GASecretBackend(totpcgi.backends.GASecretBackend):
               JOIN users AS u USING (userid)
              WHERE u.username = %s''', (user,))
         
-        for (token,) in cur.fetchall():
+        for (itoken,) in cur.fetchall():
+            token = str(itoken).zfill(8)
+            logger.debug('Adding a scratch token: %s', token)
             gaus.scratch_tokens.append(token)
 
         return gaus
@@ -326,7 +339,7 @@ class GAPincodeBackend(totpcgi.backends.GAPincodeBackend):
     def verify_user_pincode(self, user, pincode):
         cur = self.conn.cursor()
 
-        logger.debug('Querying DB for user %s' % user)
+        logger.debug('Querying DB for user %s', user)
 
         cur.execute('''
             SELECT p.pincode
@@ -368,4 +381,3 @@ class GAPincodeBackend(totpcgi.backends.GAPincodeBackend):
     def delete_user_hashcode(self, user):
         self._delete_user_hashcode(user)
         self.conn.commit()
-

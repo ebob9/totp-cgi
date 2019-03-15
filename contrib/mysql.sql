@@ -17,14 +17,13 @@
 --
 
 -- CHANGE THE PASSWORDS, OBVIOUSLY!
-use totpcgi;
-CREATE USER 'totpcgi'@'%' IDENTIFIED BY 'wakkawakka';
-CREATE USER 'totpcgi_admin'@'%' IDENTIFIED BY 'bokkabokka';
+CREATE USER totpcgi       IDENTIFIED BY 'wakkawakka';
+CREATE USER totpcgi_admin IDENTIFIED BY 'bokkabokka';
 
 -- Used by all backends
 
 CREATE TABLE users (
-  userid   INTEGER NOT NULL PRIMARY KEY AUTO_INCREMENT, 
+  userid   INTEGER NOT NULL PRIMARY KEY AUTO_INCREMENT,
   username VARCHAR(255) NOT NULL,
     CONSTRAINT users_uniq UNIQUE (username)
 );
@@ -85,3 +84,5 @@ CREATE TABLE pincodes (
 );
 GRANT SELECT                         ON pincodes TO totpcgi;
 GRANT SELECT, INSERT, UPDATE, DELETE ON pincodes TO totpcgi_admin;
+
+FLUSH PRIVILEGES;

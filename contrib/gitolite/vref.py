@@ -5,6 +5,12 @@ import logging
 import os
 import sys
 import anyjson
+import netaddr
+
+import datetime
+import dateutil
+import dateutil.parser
+import dateutil.tz
 
 #--------------- CHANGE ME TO REFLECT YOUR ENVIRONMENT -------------------
 
@@ -41,6 +47,51 @@ def how_to_validate():
     print('Please get your 2-factor authentication token and run:')
     print('    %s val [token]' % GL_2FA_COMMAND)
     print_help_link()
+
+
+def is_expired(expires):
+    exp_time = dateutil.parser.parse(expires)
+    utc = dateutil.tz.tzutc()
+    now_time = datetime.datetime.now(utc)
+    logger.debug('exp_time: %s' % exp_time)
+    logger.debug('now_time: %s' % now_time)
+
+    if now_time > exp_time:
+        logger.debug('Validation expired')
+        return True
+
+    return False
+
+
+def is_authorized_ip(ip, authorized_ips):
+    # Since authorized_ips can list both ips and networks,
+    # we always use network-aware matching
+    myipaddr = netaddr.IPAddress(ip)
+    matched = False
+    for authorized_ip in authorized_ips.keys():
+        if myipaddr in netaddr.IPNetwork(authorized_ip):
+            # Do we have a session restriction?
+            if 'sessionid' in authorized_ips[authorized_ip]:
+                if 'XDG_SESSION_ID' not in os.environ:
+                    # not sure what happened but this invalidates the session
+                    logger.critical('Could not obtain session info from env.')
+                    return False
+                if os.environ['XDG_SESSION_ID'] != authorized_ips[authorized_ip]['sessionid']:
+                    logger.critical('Your session for IP address %s has changed.' % ip)
+                    logger.critical('Check your ControlMaster settings and run val-session again.')
+                    return False
+            matched = True
+            # Is it expired?
+            expires = authorized_ips[authorized_ip]['expires']
+            if not is_expired(expires):
+                return True
+
+    if not matched:
+        logger.critical('IP address "%s" has not been validated.' % ip)
+    else:
+        logger.critical('Validation for IP address %s has expired.' % ip)
+
+    return False
 
 
 def load_authorized_ips():
@@ -126,45 +177,11 @@ def vref_verify():
 
     logger.debug('Checking if %s has been previously validated' % remote_ip)
 
-    # First compare as strings, as this is much faster
-    matching = None
-    if remote_ip not in authorized_ips.keys():
-        import netaddr
-        # We can't rely on strings, as ipv6 has more than one way to represent the same IP address, e.g.:
-        # 2001:4f8:1:10:0:1991:8:25 and 2001:4f8:1:10::1991:8:25
-        for authorized_ip in authorized_ips.keys():
-            if netaddr.IPAddress(remote_ip) == netaddr.IPAddress(authorized_ip):
-                # Found it
-                matching = authorized_ip
-                break
-    else:
-        matching = remote_ip
-
-    if matching is None:
-        logger.critical('IP address "%s" has not been validated.' % remote_ip)
+    if not is_authorized_ip(remote_ip, authorized_ips):
         how_to_validate()
         gl_fail_exit()
 
-    # Okay, but is it still valid?
-    expires = authorized_ips[matching]['expires']
-    logger.debug('Validation for %s expires on %s' % (matching, expires))
-    import datetime
-    import dateutil
-    import dateutil.parser
-    import dateutil.tz
-
-    exp_time = dateutil.parser.parse(expires)
-    utc = dateutil.tz.tzutc()
-    now_time = datetime.datetime.now(utc)
-    logger.debug('exp_time: %s' % exp_time)
-    logger.debug('now_time: %s' % now_time)
-
-    if now_time > exp_time:
-        logger.critical('Validation for IP address %s has expired.' % matching)
-        how_to_validate()
-        gl_fail_exit()
-
-    logger.info('Remote IP %s is valid' % matching)
+    logger.info('Remote IP %s is valid' % remote_ip)
 
 
 if __name__ == '__main__':

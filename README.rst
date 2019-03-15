@@ -5,11 +5,14 @@ TOTPCGI w/ pincode and simultaneous no pincode based on mode.
 ---------------------------------------------------------
 A centralized totp solution based on google-authenticator
 ---------------------------------------------------------
+.. image:: https://travis-ci.org/mricon/totp-cgi.svg?branch=master
+   :target: https://travis-ci.org/mricon/totp-cgi
+   :alt: Build Status
 
 :Author:    mricon@kernel.org
 :Copyright: Konstantin Ryabitsev and contributors
 :License:   GPLv2+
-:Version:   0.6.0-pre
+:Version:   0.6.0
 
 DECRIPTION
 ----------

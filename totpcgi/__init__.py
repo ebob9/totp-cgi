@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 ##
 # Copyright (C) 2012 by Konstantin Ryabitsev and contributors
 #
@@ -16,57 +17,64 @@
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
 # 02111-1307, USA.
 #
+from __future__ import (absolute_import,
+                        division,
+                        print_function,
+                        with_statement,
+                        unicode_literals)
+
+__author__ = 'Konstantin Ryabitsev <konstantin@linuxfoundation.org>'
+
 import time
 import pyotp
 import logging
-import exceptions
 import re
 
 logger = logging.getLogger('totpcgi')
 
-SANE_USERNAME_RE = re.compile(r'([\w\.@=+_-]+)')
+SANE_USERNAME_RE = re.compile(r'([\w.@=+_-]+)')
 
 
-class UserNotFound(exceptions.Exception):
+class UserNotFound(Exception):
     def __init__(self, message):
-        exceptions.Exception.__init__(self, message)
-        logger.debug('!UserNotFound: %s' % message)
+        Exception.__init__(self, message)
+        logger.debug('!UserNotFound: %s', message)
 
 
-class UserSecretError(exceptions.Exception):
+class UserSecretError(Exception):
     def __init__(self, message):
-        exceptions.Exception.__init__(self, message)
-        logger.debug('!UserSecretError: %s' % message)
+        Exception.__init__(self, message)
+        logger.debug('!UserSecretError: %s', message)
 
 
-class UserStateError(exceptions.Exception):
+class UserStateError(Exception):
     def __init__(self, message):
-        exceptions.Exception.__init__(self, message)
-        logger.debug('!UserStateError: %s' % message)
+        Exception.__init__(self, message)
+        logger.debug('!UserStateError: %s', message)
 
 
-class UserPincodeError(exceptions.Exception):
+class UserPincodeError(Exception):
     def __init__(self, message):
-        exceptions.Exception.__init__(self, message)
-        logger.debug('!UserPincodeError: %s' % message)
+        Exception.__init__(self, message)
+        logger.debug('!UserPincodeError: %s', message)
 
 
-class VerifyFailed(exceptions.Exception):
+class VerifyFailed(Exception):
     def __init__(self, message):
-        exceptions.Exception.__init__(self, message)
-        logger.debug('!VerifyFailed: %s' % message)
+        Exception.__init__(self, message)
+        logger.debug('!VerifyFailed: %s', message)
 
 
-class SaveFailed(exceptions.Exception):
+class SaveFailed(Exception):
     def __init__(self, message):
-        exceptions.Exception.__init__(self, message)
-        logger.debug('!SaveFailed: %s' % message)
+        Exception.__init__(self, message)
+        logger.debug('!SaveFailed: %s', message)
 
 
-class DeleteFailed(exceptions.Exception):
+class DeleteFailed(Exception):
     def __init__(self, message):
-        exceptions.Exception.__init__(self, message)
-        logger.debug('!DeleteFailed: %s' % message)
+        Exception.__init__(self, message)
+        logger.debug('!DeleteFailed: %s', message)
 
 
 class GAUserState:
@@ -89,9 +97,9 @@ class GAUserSecret:
         # secret as read from the file.
         try:
             self.otp = pyotp.TOTP(secret)
-            self.otp.at(self.timestamp)
+            self.get_totp_token()
 
-        except Exception, ex:
+        except Exception as ex:
             raise UserSecretError('Failed to generate totp: %s' % str(ex))
 
     def set_hotp(self, counter):
@@ -112,12 +120,13 @@ class GAUserSecret:
         return self.otp.at(count)
 
     def verify_scratch_token(self, token):
+        logger.debug(self.scratch_tokens)
         return token in self.scratch_tokens
 
     def verify_token(self, token):
         if self.counter < 0:
             logger.debug('Verifying as TOTP')
-            current = self.otp.at(self.timestamp)
+            current = self.get_totp_token()
             if token == current:
                 return True, 'Valid TOTP token used'
             else:
@@ -126,11 +135,11 @@ class GAUserSecret:
                     # okay, let's try within the window_size
                     start = self.timestamp-(self.window_size*10)
                     end = self.timestamp+(self.window_size*10)+1
-                    logger.debug('start=%s, end=%s' % (start, end))
+                    logger.debug('start=%s, end=%s', start, end)
 
-                    for timestamp in xrange(start, end, 10):
-                        at_token = self.otp.at(timestamp)
-                        logger.debug('timestamp=%s, at_token=%s' % (timestamp, at_token))
+                    for timestamp in range(start, end, 10):
+                        at_token = self.get_token_at(timestamp)
+                        logger.debug('timestamp=%s, at_token=%s', timestamp, at_token)
                         if at_token == token:
                             self.timestamp = timestamp
                             return True, 'Valid TOTP token within window size used'
@@ -139,20 +148,20 @@ class GAUserSecret:
 
         else:
             logger.debug('Verifying as HOTP')
-            current = self.otp.at(self.counter)
+            current = self.get_token_at(self.counter)
             if token == current:
                 self.counter += 1
-                logger.info('Incremented counter to %s' % self.counter)
+                logger.info('Incremented counter to %s', self.counter)
                 return True, 'Valid HOTP token used'
             else:
                 if self.window_size > 0:
                     # okay, let's try next window_size tokens
-                    for at_count in xrange(self.counter, self.counter+self.window_size+1, 1):
-                        logger.debug('Trying with counter=%s' % at_count)
-                        at_token = self.otp.at(at_count)
+                    for at_count in range(self.counter, self.counter+self.window_size+1, 1):
+                        at_token = self.get_token_at(at_count)
+                        logger.debug('Trying with counter=%s; at_token=%s', at_count, at_token)
                         if at_token == token:
-                            logger.info('Incremented counter by %s ticks to %s' %
-                                        (at_count - self.counter, at_count+1))
+                            logger.info('Incremented counter by %s ticks to %s',
+                                        at_count-self.counter, at_count+1)
                             self.counter = at_count+1
                             return True, 'Valid HOTP token within window size used'
 
@@ -173,18 +182,19 @@ class GAUser:
         return self.backends.pincode_backend.verify_user_pincode(self.user, pincode)
 
     def verify_token(self, token, pincode=None):
+        logger.debug('token=%s', token)
         success = (False, 'Verification failed')
 
         try:
             secret = self.backends.secret_backend.get_user_secret(self.user, pincode)
-        except UserSecretError, ex:
-            logger.debug('Failed to obtain user secret: %s' % ex)
+        except UserSecretError as ex:
+            logger.debug('Failed to obtain user secret: %s', ex)
             logger.debug('Marking failed timestamp and returning failure')
             state = self.backends.state_backend.get_user_state(self.user)
             # Since we were not able to obtain the secret object, we bluntly
             # invalidate the past 10 timestamps
             now = int(time.time())
-            for timestamp in xrange(now, now-300, -30):
+            for timestamp in range(now, now-300, -30):
                 state.fail_timestamps.append(timestamp)
             self.backends.state_backend.update_user_state(self.user, state)
             raise ex
@@ -193,7 +203,7 @@ class GAUser:
         new_state = GAUserState()
 
         # grab the counter from the state and modify user secret with latest counter info
-        logger.debug('state.counter=%s, secret.counter=%s' % (state.counter, secret.counter))
+        logger.debug('state.counter=%s, secret.counter=%s', state.counter, secret.counter)
         if state.counter > secret.counter:
             secret.set_hotp(state.counter)
 
@@ -234,61 +244,56 @@ class GAUser:
 
             new_state.fail_timestamps.append(timestamp)
 
-        logger.debug('used_tokens=%s' % used_tokens)
+        logger.debug('used_tokens=%s', used_tokens)
 
         if len(new_state.fail_timestamps) >= secret.rate_limit[0]:
             success = (False, 'Rate-limit reached, please try again later')
 
         else:
-            # Is this token valid at all?
-            if len(str(token)) > 8:
-                success = (False, 'Token is too long')
-            else:
-                try:
-                    token = int(token)
-                except ValueError:
-                    success = (False, 'Token is not an integer')
-                    token = -1
+            try:
+                itoken = int(token)
+            except ValueError:
+                success = (False, 'Token is not an integer')
+                itoken = -1
 
-                # Is this a scratch-code token?
-                if token > 999999:
-                    logger.debug('A scratch-code token is used')
+            if len(str(token)) >= 8 and itoken >= 0:
+                # Try to verify as a scratch token
+                # has it been used before?
+                if token in state.used_scratch_tokens:
+                    success = (False, 'Scratch-token already used once')
+                elif not secret.verify_scratch_token(token):
+                    # we get out early, without updating state, since we
+                    # will retry this as a pincode+6-digit token and the
+                    # failure will be recorded at that step.
+                    self.backends.state_backend.update_user_state(
+                        self.user, state)
+                    raise VerifyFailed('Not a valid scratch-token')
+                else:
+                    success = (True, 'Scratch-token used')
+                    new_state.used_scratch_tokens.append(token)
 
-                    # has it been used before?
-                    if token in state.used_scratch_tokens:
-                        success = (False, 'Scratch-token already used once')
-                    elif not secret.verify_scratch_token(token):
-                        # we get out early, without updating state, since we
-                        # will retry this as a pincode+6-digit token and the
-                        # failure will be recorded at that step.
-                        self.backends.state_backend.update_user_state(
-                            self.user, state)
-                        raise VerifyFailed('Not a valid scratch-token')
-                    else:
-                        success = (True, 'Scratch-token used')
-                        new_state.used_scratch_tokens.append(token)
+            elif itoken >= 0:
+                logger.debug('A regular token is used')
 
-                elif token >= 0:
-                    logger.debug('A regular token is used')
-
-                    # has it been used before?
-                    if not secret.is_hotp() and token in used_tokens:
-                        success = (False, 'Token has already been used once')
-                    else:
-                        success = secret.verify_token(token)
+                # has it been used before?
+                if not secret.is_hotp() and token in used_tokens:
+                    success = (False, 'Token has already been used once')
+                else:
+                    success = secret.verify_token(token)
 
             # Adjust state accordingly
             if success[0] is True:
                 new_state.success_timestamps.append(secret.timestamp)
             else:
                 # Add all timestamps that are within the back-window
-                for ts in xrange(secret.timestamp, secret.timestamp-(secret.window_size*10), -30):
+                for ts in range(secret.timestamp, secret.timestamp-(secret.window_size*10), -30):
+                    logger.debug('Adding timestamp to failed: %s', ts)
                     new_state.fail_timestamps.append(ts)
 
         new_state.counter = secret.counter
         self.backends.state_backend.update_user_state(self.user, new_state)
 
-        logger.debug('success=%s' % str(success))
+        logger.debug('success=%s', str(success))
 
         if success[0] is False:
             raise VerifyFailed(success[1])
@@ -320,10 +325,10 @@ class GoogleAuthenticator:
         if len(token) == 8:
             # is it a valid integer?
             try:
-                itoken = int(token)
+                int(token)
                 # let's try to load it as an 8-digit token
                 try:
-                    logger.debug('Trying to verify %s as an 8-digit scratch-token' % itoken)
+                    logger.debug('Trying to verify %s as an 8-digit scratch-token', token)
 
                     success = user.verify_token(token)
                     if self.require_pincode:
@@ -353,7 +358,7 @@ class GoogleAuthenticator:
 
         try:
             user.verify_pincode(pincode)
-        except UserPincodeError, ex:
+        except UserPincodeError as ex:
             # Run it anyway to record the timestamp as used
             try:
                 user.verify_token(tokencode, pincode)
